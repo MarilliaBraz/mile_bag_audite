@@ -1,36 +1,124 @@
 # Convenções do Projeto — mile_bag_audite
 
-Este documento define os padrões de construção do projeto. Como a stack ainda não
-foi definida, as convenções abaixo são agnósticas de linguagem e devem ser
-adaptadas (sem perder o espírito) quando a stack for escolhida.
+Este documento define os padrões de construção do projeto.
+
+## 0. Stack
+
+- **Backend:** Java, seguindo os princípios **SOLID**.
+- **Frontend:** React, organizado por **feature**.
 
 ## 1. Estrutura de pastas
 
-Estrutura raiz recomendada:
+### 1.1 Backend (Java)
+
+Separação entre **core** (infraestrutura genérica, reutilizável, sem regra de
+negócio) e **business** (regras de negócio, organizadas por domínio):
 
 ```
-mile_bag_audite/
-├── src/                # código-fonte da aplicação
-│   ├── modules/        # ou domains/ — um subdiretório por domínio/feature
-│   ├── shared/         # código compartilhado entre módulos (utils, types, config)
-│   └── main.*          # ponto de entrada da aplicação
-├── tests/              # testes automatizados, espelhando a estrutura de src/
-├── docs/               # documentação adicional (ADRs, diagramas, etc.)
-├── scripts/            # scripts auxiliares (build, deploy, migração)
-├── .github/             # workflows de CI/CD, templates de PR/issue
-├── CONVENTIONS.md
-├── README.md
-└── CHANGELOG.md
+backend/
+├── src/main/java/com/marillia/milebagaudite/
+│   ├── core/                    # genérico, reutilizável, independente de negócio
+│   │   ├── config/              # beans, security, configs gerais
+│   │   ├── exception/           # tratamento de exceções e erros padronizados
+│   │   ├── util/                # utilitários reutilizáveis
+│   │   └── base/                # classes base (BaseEntity, BaseRepository, BaseService)
+│   ├── business/                # regras de negócio, um subpacote por domínio
+│   │   ├── bagaudit/
+│   │   │   ├── controller/
+│   │   │   ├── service/
+│   │   │   ├── repository/
+│   │   │   ├── model/           # entities / DTOs
+│   │   │   └── mapper/
+│   │   └── mileprogram/
+│   │       └── ...
+│   └── MileBagAuditeApplication.java
+├── src/main/resources/
+│   ├── application.yml
+│   ├── application-dev.yml
+│   ├── application-staging.yml
+│   └── application-prod.yml
+├── src/test/java/...            # espelha a estrutura de src/main/java
+└── pom.xml
 ```
 
 Regras:
-- Organização por **domínio/feature** dentro de `src/`, não por tipo técnico
-  (evitar pastas genéricas como `controllers/`, `services/` soltas na raiz de `src/`).
-- Cada módulo deve conter seus próprios testes próximos ou espelhados em `tests/`.
-- Nenhum arquivo solto na raiz do repositório além de configuração
-  (`.gitignore`, `README.md`, `CONVENTIONS.md`, arquivos de config de build).
+- `core` nunca depende de `business`; a dependência é sempre em uma direção
+  (`business` pode usar `core`, nunca o inverso).
+- Regra de negócio nova entra em `business/<dominio>`, nunca solta em `core`.
+- Comportamento comum a múltiplos domínios (ex: validação genérica,
+  paginação, resposta padrão de API) vive em `core` para reuso.
 
-## 2. Convenção de commits
+### 1.2 Frontend (React) — organização por feature
+
+```
+frontend/
+├── src/
+│   ├── features/
+│   │   ├── bag-audit/
+│   │   │   ├── components/
+│   │   │   ├── hooks/
+│   │   │   ├── services/        # chamadas à API
+│   │   │   ├── types/
+│   │   │   └── index.ts
+│   │   └── mile-program/
+│   │       └── ...
+│   ├── shared/                  # componentes, hooks e utils reutilizados entre features
+│   │   ├── components/
+│   │   ├── hooks/
+│   │   └── utils/
+│   ├── App.tsx
+│   └── main.tsx
+├── public/
+└── package.json
+```
+
+Regras:
+- Cada `feature/` é autocontida: componentes, hooks e chamadas de API
+  específicos daquela feature ficam dentro dela, não espalhados por pastas
+  técnicas genéricas (`components/`, `services/` na raiz).
+- Só sobe para `shared/` o que é usado por **duas ou mais** features.
+- Uma feature não importa direto de dentro de outra feature; se precisa
+  compartilhar algo, esse algo sobe para `shared/`.
+
+## 2. Princípios de arquitetura
+
+### 2.1 SOLID (backend)
+
+- **S — Single Responsibility:** cada classe tem um único motivo para mudar
+  (ex: `Service` não deve conter lógica de acesso a dados nem de apresentação).
+- **O — Open/Closed:** extensão via novas classes/implementações, não
+  modificando classes existentes que já funcionam.
+- **L — Liskov Substitution:** implementações de uma interface devem ser
+  substituíveis entre si sem quebrar o comportamento esperado.
+- **I — Interface Segregation:** interfaces pequenas e específicas em vez de
+  uma interface genérica "faz tudo".
+- **D — Dependency Inversion:** classes dependem de abstrações (interfaces),
+  não de implementações concretas; injeção de dependência sempre que possível.
+
+### 2.2 Reutilização de código
+
+- Antes de escrever uma nova função/classe, verificar se algo equivalente já
+  existe em `core` (backend) ou `shared` (frontend).
+- Lógica repetida em 2+ lugares deve ser extraída para um ponto único de
+  reuso (não copiar/colar).
+- Preferir composição a herança profunda; usar herança apenas para relações
+  genuínas de "é um" (ex: `BaseEntity`).
+
+### 2.3 Os 3 pilares da manutenção de software
+
+1. **Parametrização** — valores que podem variar (limites, regras,
+   textos, feature flags) não são hardcoded no código; ficam em
+   configuração (`application.yml`, tabelas de parâmetro, variáveis de
+   ambiente do frontend).
+2. **Ambiente** — configuração isolada por ambiente (`dev`, `staging`,
+   `prod`) via profiles do Spring (`application-<env>.yml`) e arquivos
+   `.env.<env>` no frontend; nenhum valor de ambiente específico
+   (URL, credencial, etc.) vai direto no código-fonte.
+3. **Versão** — versionamento explícito de: API (ex: `/api/v1/...`),
+   migrações de banco (Flyway/Liquibase, sempre incrementais e nunca
+   editadas após aplicadas) e do próprio projeto (SemVer + `CHANGELOG.md`).
+
+## 3. Convenção de commits
 
 Seguimos **Conventional Commits**:
 
@@ -57,17 +145,31 @@ Regras:
 - Um commit deve representar uma mudança lógica única e coesa.
 - Breaking changes marcados com `!` após o tipo/escopo (`feat!: ...`) e explicados no rodapé com `BREAKING CHANGE:`.
 
-## 3. Nomenclatura de código
+## 4. Nomenclatura de código
 
-- **Arquivos**: `kebab-case` (ex: `bag-audit-service.ts`), exceto quando a stack exigir outro padrão (ex: classes Java em `PascalCase.java`).
-- **Variáveis e funções**: `camelCase`.
-- **Classes, interfaces, tipos, componentes**: `PascalCase`.
-- **Constantes globais/imutáveis**: `SCREAMING_SNAKE_CASE`.
-- **Booleanos**: prefixo `is`, `has`, `can`, `should` (ex: `isValid`, `hasPermission`).
-- **Nomes descritivos e em inglês** no código (variáveis, funções, classes); textos voltados ao usuário final podem ser em português.
+### 4.1 Backend (Java)
+
+- **Pacotes**: `lowercase`, sem underscore (ex: `com.marillia.milebagaudite.business.bagaudit`).
+- **Classes e interfaces**: `PascalCase` (ex: `BagAuditService`, `BagAuditRepository`).
+- **Métodos e variáveis**: `camelCase` (ex: `calculateBagWeight`).
+- **Constantes**: `SCREAMING_SNAKE_CASE` (ex: `MAX_BAG_WEIGHT_KG`).
+- **Interfaces de implementação única** não usam prefixo `I` (ex: `BagAuditService` + `BagAuditServiceImpl`, não `IBagAuditService`).
+- **Booleanos**: prefixo `is`, `has`, `can` (ex: `isValid`, `hasExceededLimit`).
+
+### 4.2 Frontend (React)
+
+- **Componentes**: arquivo e nome do componente em `PascalCase` (ex: `BagAuditCard.tsx`).
+- **Hooks**: `camelCase` com prefixo `use` (ex: `useBagAudit.ts`).
+- **Funções, variáveis, services**: `camelCase`.
+- **Tipos/Interfaces**: `PascalCase` (ex: `BagAuditDTO`).
+- **Pastas de feature**: `kebab-case` (ex: `bag-audit/`).
+
+### 4.3 Geral
+
+- Nomes descritivos e em inglês no código; textos voltados ao usuário final podem ser em português.
 - Evitar abreviações não óbvias; preferir clareza a brevidade.
 
-## 4. Branching / fluxo git
+## 5. Branching / fluxo git
 
 Modelo baseado em **trunk-based simplificado**:
 
