@@ -144,6 +144,7 @@ Regras:
 - Descrição no imperativo, minúscula, sem ponto final (`fix: corrige validação de peso da mala`).
 - Um commit deve representar uma mudança lógica única e coesa.
 - Breaking changes marcados com `!` após o tipo/escopo (`feat!: ...`) e explicados no rodapé com `BREAKING CHANGE:`.
+- Commits não devem incluir rodapé de coautoria de IA (ex: `Co-Authored-By: Claude`); a autoria do commit é sempre humana.
 
 ## 4. Nomenclatura de código
 
