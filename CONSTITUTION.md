@@ -55,6 +55,8 @@ auditoria.
      conscientemente altera) a missão do projeto.
 - Em caso de conflito entre uma convenção técnica e um princípio deste
   documento, o princípio prevalece.
+- A autoria dos commits é sempre humana; commits não incluem rodapé de
+  coautoria de IA (ex: `Co-Authored-By: Claude`).
 
 ---
 
