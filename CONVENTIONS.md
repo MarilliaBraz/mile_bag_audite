@@ -16,30 +16,41 @@ negócio) e **business** (regras de negócio, organizadas por domínio):
 
 ```
 backend/
-├── src/main/java/com/marillia/milebagaudite/
+├── src/main/java/com/marillia/milebag/
 │   ├── core/                    # genérico, reutilizável, independente de negócio
-│   │   ├── config/              # beans, security, configs gerais
+│   │   ├── config/              # beans, security, configs gerais, contexto de tenant
 │   │   ├── exception/           # tratamento de exceções e erros padronizados
 │   │   ├── util/                # utilitários reutilizáveis
 │   │   └── base/                # classes base (BaseEntity, BaseRepository, BaseService)
 │   ├── business/                # regras de negócio, um subpacote por domínio
-│   │   ├── bagaudit/
-│   │   │   ├── controller/
-│   │   │   ├── service/
-│   │   │   ├── repository/
-│   │   │   ├── model/           # entities / DTOs
-│   │   │   └── mapper/
-│   │   └── mileprogram/
-│   │       └── ...
-│   └── MileBagAuditeApplication.java
+│   │   ├── tenant/       # tenant, plano de assinatura, convite de administrador
+│   │   ├── bdo/          # captura e conferência do BDO (OCR)
+│   │   ├── entrega/      # ciclo de vida da entrega, bagagem carona
+│   │   ├── rota/         # cálculo de rota (transitório)
+│   │   ├── viagem/       # snapshot de rota congelado
+│   │   ├── comprovante/  # comprovante de entrega (POD)
+│   │   ├── ocorrencia/   # ocorrências e reabertura de BDO
+│   │   ├── tarifa/       # tabelas de tarifa
+│   │   ├── pedagio/      # praças de pedágio
+│   │   ├── fechamento/   # fechamento financeiro periódico
+│   │   └── configuracao/ # parametrização por tenant, identidade visual
+│   │       ├── controller/
+│   │       ├── service/
+│   │       ├── repository/
+│   │       ├── model/           # entities / DTOs
+│   │       └── mapper/
+│   └── MilebagApplication.java
 ├── src/main/resources/
 │   ├── application.yml
 │   ├── application-dev.yml
-│   ├── application-staging.yml
 │   └── application-prod.yml
 ├── src/test/java/...            # espelha a estrutura de src/main/java
 └── pom.xml
 ```
+
+Cada subpacote de `business/<dominio>/` segue a mesma estrutura interna mostrada em
+`configuracao/` acima (`controller/`, `service/`, `repository/`, `model/`, `mapper/`
+quando aplicável) — omitida nos demais só para não repetir no diagrama.
 
 Regras:
 - `core` nunca depende de `business`; a dependência é sempre em uma direção
@@ -54,13 +65,19 @@ Regras:
 frontend/
 ├── src/
 │   ├── features/
-│   │   ├── bag-audit/
-│   │   │   ├── components/
-│   │   │   ├── hooks/
-│   │   │   ├── services/        # chamadas à API
-│   │   │   ├── types/
-│   │   │   └── index.ts
-│   │   └── mile-program/
+│   │   ├── motorista/            # PWA do motorista
+│   │   │   ├── captura-bdo/
+│   │   │   │   ├── components/
+│   │   │   │   ├── hooks/
+│   │   │   │   ├── services/    # chamadas à API
+│   │   │   │   ├── types/
+│   │   │   │   └── index.ts
+│   │   │   ├── rota/
+│   │   │   └── offline-sync/
+│   │   └── back-office/          # administrador do tenant e da plataforma
+│   │       ├── tarifas/
+│   │       ├── pedagios/
+│   │       ├── fechamento/
 │   │       └── ...
 │   ├── shared/                  # componentes, hooks e utils reutilizados entre features
 │   │   ├── components/
@@ -79,6 +96,11 @@ Regras:
 - Só sobe para `shared/` o que é usado por **duas ou mais** features.
 - Uma feature não importa direto de dentro de outra feature; se precisa
   compartilhar algo, esse algo sobe para `shared/`.
+- Quando um repositório reúne mais de uma aplicação (caso do `mile_bag_app`,
+  que tem back-office e a PWA do motorista no mesmo projeto), `features/`
+  ganha um nível de agrupamento por aplicação (`features/<app>/<dominio>/`)
+  antes da regra acima — a organização por feature continua valendo dentro
+  de cada aplicação.
 
 ## 2. Princípios de arquitetura
 
@@ -141,7 +163,7 @@ Tipos permitidos:
 - `perf`: melhoria de performance
 
 Regras:
-- Descrição no imperativo, minúscula, sem ponto final (`fix: corrige validação de peso da mala`).
+- Descrição no imperativo, minúscula, sem ponto final (`fix: corrige congelamento de pedagio na viagem`).
 - Um commit deve representar uma mudança lógica única e coesa.
 - Breaking changes marcados com `!` após o tipo/escopo (`feat!: ...`) e explicados no rodapé com `BREAKING CHANGE:`.
 - Commits não devem incluir rodapé de coautoria de IA (ex: `Co-Authored-By: Claude`); a autoria do commit é sempre humana.
@@ -150,24 +172,32 @@ Regras:
 
 ### 4.1 Backend (Java)
 
-- **Pacotes**: `lowercase`, sem underscore (ex: `com.marillia.milebagaudite.business.bagaudit`).
-- **Classes e interfaces**: `PascalCase` (ex: `BagAuditService`, `BagAuditRepository`).
-- **Métodos e variáveis**: `camelCase` (ex: `calculateBagWeight`).
-- **Constantes**: `SCREAMING_SNAKE_CASE` (ex: `MAX_BAG_WEIGHT_KG`).
-- **Interfaces de implementação única** não usam prefixo `I` (ex: `BagAuditService` + `BagAuditServiceImpl`, não `IBagAuditService`).
-- **Booleanos**: prefixo `is`, `has`, `can` (ex: `isValid`, `hasExceededLimit`).
+- **Pacotes**: `lowercase`, sem underscore (ex: `com.marillia.milebag.business.entrega`).
+- **Classes e interfaces**: `PascalCase` (ex: `EntregaService`, `EntregaRepository`, `TabelaTarifa`).
+- **Métodos e variáveis**: `camelCase` (ex: `calcularQuilometragemComplementar`, `congelarSnapshotRota`).
+- **Constantes e valores de enum**: `SCREAMING_SNAKE_CASE` (ex: `EntregaStatus.EM_ANDAMENTO`, `EntregaStatus.ENCERRADA_COM_SUCESSO`).
+- **Interfaces de implementação única** não usam prefixo `I` (ex: `EntregaService` + `EntregaServiceImpl`, não `IEntregaService`).
+- **Booleanos**: prefixo `is`, `has`, `can` (ex: `isPendente`, `hasExcedidoLimiteMotoristas`).
 
 ### 4.2 Frontend (React)
 
-- **Componentes**: arquivo e nome do componente em `PascalCase` (ex: `BagAuditCard.tsx`).
-- **Hooks**: `camelCase` com prefixo `use` (ex: `useBagAudit.ts`).
-- **Funções, variáveis, services**: `camelCase`.
-- **Tipos/Interfaces**: `PascalCase` (ex: `BagAuditDTO`).
-- **Pastas de feature**: `kebab-case` (ex: `bag-audit/`).
+- **Componentes**: arquivo e nome do componente em `PascalCase` (ex: `EntregaCard.tsx`, `TelaConferenciaBdo.tsx`).
+- **Hooks**: `camelCase` com prefixo `use` (ex: `useCapturaBdo.ts`, `useRota.ts`).
+- **Funções, variáveis, services**: `camelCase` (ex: `bdoService`, `rotaService`).
+- **Tipos/Interfaces**: `PascalCase` (ex: `EntregaDTO`).
+- **Pastas de feature**: `kebab-case` (ex: `captura-bdo/`, `bagagem-carona/`).
 
 ### 4.3 Geral
 
-- Nomes descritivos e em inglês no código; textos voltados ao usuário final podem ser em português.
+- Vocabulário técnico genérico (padrões de arquitetura, tipos de dado, verbos de
+  CRUD) em inglês: `Service`, `Repository`, `Controller`, `Request`, `Response`,
+  `create`, `find`, `update`.
+- Termos de domínio (a linguagem ubíqua do negócio, a mesma usada no TAP, nas
+  HUs e com a empresa parceira) ficam em **português**, mesmo em identificadores
+  de código: `Entrega`, `BDO`, `TabelaTarifa`, `PracaPedagio`, `ComprovanteEntrega`,
+  `EntregaStatus`. Não traduzir esses nomes para o inglês — a tradução afastaria o
+  código do vocabulário usado na documentação e na conversa com o cliente.
+- Textos voltados ao usuário final sempre em português.
 - Evitar abreviações não óbvias; preferir clareza a brevidade.
 
 ## 5. Branching / fluxo git
@@ -180,7 +210,7 @@ Modelo baseado em **trunk-based simplificado**:
 - `chore/<descrição-curta>`: manutenção/config.
 
 Regras:
-- Nomes de branch em `kebab-case`, descritivos (ex: `feature/validacao-peso-mala`).
+- Nomes de branch em `kebab-case`, descritivos (ex: `feature/congelamento-rota-viagem`).
 - Toda mudança entra em `main` via **Pull Request**, nunca push direto.
 - PR deve ter descrição do que mudou e por quê; título segue o padrão de commits.
 - Branch é excluída após o merge.
