@@ -7,7 +7,8 @@
 #  Adaptado do script da aula "Normas de Configuração de Software e Boas
 #  Práticas" (SENAI — evidencias/padronizar-projeto.sh em mile_bag_documentacao),
 #  que assumia Angular + Maven. Diferenças principais:
-#    - Projeto React (mile_bag_app): SOMENTE auditoria, nunca grava nada.
+#    - Front-end React + Vite + oxlint (CONVENTIONS.md §0), não Angular: o
+#      Prettier segue o estilo atual do código e o hook usa o oxlint do projeto.
 #    - Não gera CONVENTIONS.md: a fonte única é mile_bag_audite/CONVENTIONS.md.
 #    - Hook de commit com os tipos e regras da §3 de CONVENTIONS.md.
 #    - Auditoria das regras do projeto: core não depende de business (§1.1),
@@ -21,6 +22,7 @@
 #    --dry-run    Mostra o que seria feito, sem gravar nada
 #    --force      Substitui arquivos existentes (cria backup .bak antes)
 #    --audit      Só roda a auditoria (não cria arquivos)
+#    --install    Projeto React: instala o Prettier (devDependency) via npm
 #    -h, --help   Mostra esta ajuda
 #
 #  Exemplo (todos os repositórios, a partir de D:\Projeto_PI):
@@ -38,6 +40,7 @@ PROJECT_DIR="."
 DRY_RUN=false
 FORCE=false
 AUDIT_ONLY=false
+INSTALL=false
 
 MAX_FILE_LINES=300   # acima disso o arquivo provavelmente faz coisa demais
 LIMITE_LISTA=20      # máximo de achados mostrados por item da auditoria
@@ -56,7 +59,7 @@ log_info()  { echo "${C_INFO}→${C_RESET} $*"; }
 log_error() { echo "${C_ERR}✖${C_RESET} $*" >&2; }
 section()   { echo; echo "${C_INFO}== $* ==${C_RESET}"; }
 
-show_help() { sed -n '2,32p' "$0" | sed 's/^#  \{0,1\}//'; exit 0; }
+show_help() { sed -n '2,33p' "$0" | sed 's/^#  \{0,1\}//'; exit 0; }
 
 # ----------------------------------------------------------------------------
 # Argumentos
@@ -66,6 +69,7 @@ for arg in "$@"; do
     --dry-run) DRY_RUN=true ;;
     --force)   FORCE=true ;;
     --audit)   AUDIT_ONLY=true ;;
+    --install) INSTALL=true ;;
     -h|--help) show_help ;;
     -*)        log_error "Opção desconhecida: $arg"; exit 1 ;;
     *)         PROJECT_DIR="$arg" ;;
@@ -89,11 +93,6 @@ if [[ -f package.json ]] && grep -q '"react"' package.json; then
   IS_REACT=true
 fi
 
-# React: a configuração do front-end (oxlint, tsconfig, Vite) é do próprio
-# projeto - este script só a audita.
-if $IS_REACT; then
-  AUDIT_ONLY=true
-fi
 
 # ----------------------------------------------------------------------------
 # Escrita segura: nunca sobrescreve sem --force, e faz backup quando sobrescreve
@@ -179,9 +178,12 @@ setup_gitattributes() {
 
 setup_gitignore() {
   section "Organização: .gitignore"
+  # .env.development/.env.production do Vite só têm configuração pública
+  # (variáveis VITE_ vão para o navegador) e são versionadas; valores locais ou
+  # secretos ficam em .env, .env.local e .env.*.local.
   append_unique ".gitignore" \
-    "# --- Backups do padronizar-projeto.sh e segredos locais ---" \
-    "*.bak" ".env" ".env.*" "!.env.example"
+    "# --- Backups do padronizar-projeto.sh e ambiente local ---" \
+    "*.bak" ".env" ".env.local" ".env.*.local"
 }
 
 setup_checkstyle() {
@@ -264,6 +266,46 @@ EOF
   log_info "Para rodar sem mexer no pom: mvn org.apache.maven.plugins:maven-checkstyle-plugin:3.6.0:check -Dcheckstyle.config.location=config/checkstyle/checkstyle.xml -Dcheckstyle.failOnViolation=false"
 }
 
+setup_prettier() {
+  $IS_REACT || return 0
+  section "Padronização: Prettier (React)"
+
+  # Espelha o estilo que o código já usa (aspas duplas, ponto e vírgula,
+  # vírgula final, linhas longas), para a primeira formatação mexer pouco.
+  # endOfLine "auto": no Windows o checkout vem com CRLF (core.autocrlf) e o
+  # Git já normaliza para LF no commit - "lf" acusaria todos os arquivos.
+  write_file ".prettierrc.json" <<'EOF'
+{
+  "printWidth": 140,
+  "singleQuote": false,
+  "semi": true,
+  "trailingComma": "all",
+  "bracketSpacing": true,
+  "arrowParens": "always",
+  "endOfLine": "auto"
+}
+EOF
+
+  write_file ".prettierignore" <<'EOF'
+dist/
+dev-dist/
+node_modules/
+coverage/
+package-lock.json
+EOF
+
+  if $INSTALL && ! $DRY_RUN; then
+    if command -v npm >/dev/null; then
+      npm install --save-dev --save-exact prettier
+      log_ok "Prettier instalado (devDependency)"
+    else
+      log_warn "npm não encontrado — instale com: npm i -D -E prettier"
+    fi
+  else
+    log_info "Para instalar: npm i -D -E prettier (ou rode este script com --install). Formatar: npx prettier --write src"
+  fi
+}
+
 # =============================================================================
 # 5. ORGANIZAÇÃO — hooks do Git que aplicam as regras automaticamente
 # =============================================================================
@@ -302,14 +344,28 @@ EOF
 # Verificações rápidas antes de cada commit (mile_bag_audite/scripts/padronizar-projeto.sh).
 # Lê o conteúdo que vai para o commit (index), não o da pasta de trabalho.
 falhou=0
+ts_alterados=()
 
 while IFS= read -r -d '' arquivo; do
   conteudo() { git show ":$arquivo" 2>/dev/null; }
 
-  # Arquivo de ambiente com valores reais nunca vai para o repositório (§2.3, pilar Ambiente).
+  # Arquivo de ambiente com valores locais/secretos nunca vai para o
+  # repositório (§2.3, pilar Ambiente). .env.development/.env.production do
+  # Vite (só configuração pública) e os .example são permitidos.
   case "$arquivo" in
-    *.env|.env|.env.*|*/.env|*/.env.*)
-      case "$arquivo" in *.example) ;; *) echo "✖ $arquivo: arquivo de ambiente no commit (use um .example)."; falhou=1 ;; esac ;;
+    *.example) ;;
+    .env|*/.env|*.env|.env.local|*/.env.local|*.local)
+      echo "✖ $arquivo: arquivo de ambiente local no commit (use um .example)."; falhou=1 ;;
+  esac
+
+  # Front-end: console.log e debugger esquecidos (testes ficam de fora).
+  case "$arquivo" in
+    *.test.ts|*.test.tsx|*.spec.ts|*.spec.tsx) ;;
+    *.ts|*.tsx)
+      if conteudo | grep -nE '(console\.log\(|^\s*debugger;?\s*$)' >/dev/null; then
+        echo "✖ $arquivo: console.log ou debugger esquecido."; falhou=1
+      fi
+      ts_alterados+=("$arquivo") ;;
   esac
 
   # Print de depuração em código de produção Java: use um Logger.
@@ -331,6 +387,18 @@ while IFS= read -r -d '' arquivo; do
       fi ;;
   esac
 done < <(git diff --cached --name-only --diff-filter=ACM -z)
+
+# Front-end: o oxlint do próprio projeto (npm run lint) nos arquivos do commit -
+# erro bloqueia, aviso não. O Prettier, se instalado, só avisa.
+if (( ${#ts_alterados[@]} > 0 )) && [[ -x node_modules/.bin/oxlint ]]; then
+  if ! node_modules/.bin/oxlint "${ts_alterados[@]}" >/dev/null 2>&1; then
+    echo "✖ oxlint encontrou erros. Veja com: npx oxlint ${ts_alterados[*]}"; falhou=1
+  fi
+fi
+if (( ${#ts_alterados[@]} > 0 )) && [[ -x node_modules/.bin/prettier ]]; then
+  node_modules/.bin/prettier --check "${ts_alterados[@]}" >/dev/null 2>&1 \
+    || echo "⚠ Arquivos fora da formatação do Prettier (rode: npx prettier --write <arquivos>)."
+fi
 
 exit $falhou
 EOF
@@ -453,7 +521,7 @@ auditar_migracoes() {
 
 auditar_react() {
   $IS_REACT && [[ -d src ]] || return 0
-  section "Auditoria do front-end (React) — somente leitura"
+  section "Auditoria do front-end (React)"
   log_info "$(fontes src ts tsx | tr -cd '\0' | wc -c | tr -d ' ') arquivos .ts/.tsx em src"
 
   arquivos_grandes src ts tsx | relatar "Arquivos com mais de $MAX_FILE_LINES linhas — candidatos a dividir:"
@@ -545,7 +613,7 @@ run_audit() {
 # =============================================================================
 echo "${C_INFO}Padronizando projeto em:${C_RESET} $PROJECT_DIR"
 echo "  Maven (Java):  $($IS_MAVEN && echo sim || echo não)"
-echo "  React:         $($IS_REACT && echo 'sim — somente auditoria, nada é alterado' || echo não)"
+echo "  React:         $($IS_REACT && echo sim || echo não)"
 $DRY_RUN && log_warn "Modo dry-run: nada será gravado"
 
 if ! $AUDIT_ONLY; then
@@ -553,6 +621,7 @@ if ! $AUDIT_ONLY; then
   setup_gitattributes
   setup_gitignore
   setup_checkstyle
+  setup_prettier
   setup_git_hooks
 fi
 
@@ -564,5 +633,6 @@ if ! $AUDIT_ONLY && ! $DRY_RUN; then
   echo "Próximos passos:"
   echo "  1. Revise o que foi criado: git status"
   $IS_MAVEN && echo "  2. Opcional: cole config/checkstyle/pom-snippet.xml no pom.xml"
+  $IS_REACT && echo "  2. Opcional: npm i -D -E prettier && npx prettier --write src (revise o diff antes do commit)"
   echo "  3. Commit numa branch chore/ e PR (CONVENTIONS.md §5): chore: padroniza configuracao do projeto"
 fi
