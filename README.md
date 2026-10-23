@@ -16,11 +16,12 @@ Versão adaptada ao Milebag do script da aula de Normas de Configuração (o ori
 # a partir da pasta que contém os repositórios
 mile_bag_audite/scripts/padronizar-projeto.sh mile_bag_api --dry-run   # mostra o que faria
 mile_bag_audite/scripts/padronizar-projeto.sh mile_bag_api             # aplica
-mile_bag_audite/scripts/padronizar-projeto.sh mile_bag_app             # React: só auditoria
+mile_bag_audite/scripts/padronizar-projeto.sh mile_bag_app --install   # React; --install adiciona o Prettier
 ```
 
-- **Aplica** (só o que ainda não existe; `--force` substitui com backup `.bak`): `.editorconfig`, linhas em `.gitattributes` e `.gitignore`, Checkstyle com a nomenclatura da §4.1 (projeto Maven; o `pom.xml` nunca é editado) e hooks de Git: `commit-msg` com a §3 e `pre-commit` contra `System.out`, segredo no código e arquivo `.env`.
-- **Projeto React:** somente auditoria — nenhum arquivo é criado ou alterado.
+- **Aplica** (só o que ainda não existe; `--force` substitui com backup `.bak`): `.editorconfig`, linhas em `.gitattributes` e `.gitignore` e hooks de Git — `commit-msg` com a §3 e `pre-commit` contra segredo no código e arquivo de ambiente local (`.env`, `.env.local`, `.env.*.local`; `.env.development`/`.env.production` do Vite continuam versionados).
+- **Back-end (Maven):** Checkstyle com a nomenclatura da §4.1 (o `pom.xml` nunca é editado) e bloqueio de `System.out` no hook.
+- **Front-end (React + Vite + oxlint — não Angular, como no script original):** Prettier configurado no estilo atual do código (aspas duplas, ponto e vírgula, vírgula final) e, no hook, bloqueio de `console.log`/`debugger` e o `oxlint` do projeto nos arquivos do commit (erro bloqueia; aviso não). A primeira formatação com `npx prettier --write src` muda 62 arquivos (~1.000 linhas) — fazer num commit próprio de `style`.
 - **Não gera** `CONVENTIONS.md` nos repositórios: a fonte única é este repositório.
 - **Audita** (só leitura): arquivos grandes, `core` importando `business` (§1.1), feature importando outra feature (§1.2), interfaces com prefixo `I` (§4.1), endereço de ambiente fixo no código e migrações Flyway repetidas (§2.3), código comentado, TODO sem responsável, mensagens de commit fora da §3 e coautoria de IA.
 
