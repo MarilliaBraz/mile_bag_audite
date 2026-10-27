@@ -197,7 +197,11 @@ Regras:
   de código: `Entrega`, `BDO`, `TabelaTarifa`, `PracaPedagio`, `ComprovanteEntrega`,
   `EntregaStatus`. Não traduzir esses nomes para o inglês — a tradução afastaria o
   código do vocabulário usado na documentação e na conversa com o cliente.
-- Textos voltados ao usuário final sempre em português.
+- Textos voltados ao usuário final em português, que é o idioma de referência. A interface do
+  `mile_bag_app` também é oferecida em espanhol e inglês, escolhidos pelo usuário: os textos ficam
+  nos dicionários do front-end (`src/shared/i18n/textos/`), nunca escritos direto nas telas, e toda
+  frase nova entra nos três idiomas (o build falha se faltar alguma). Mensagens geradas pelo
+  back-end (erros da API, e-mails e mensagens ao passageiro) e dados cadastrados continuam em português.
 - Evitar abreviações não óbvias; preferir clareza a brevidade.
 
 ## 5. Branching / fluxo git
